@@ -54,7 +54,7 @@ func main() {
 			fmt.Println("[DEBUG] Calling tokens.CloseHandleN()...")
 		}
 		err := tokens.CloseHandleN(hProc)
-		if err != nil{
+		if err != nil {
 			log.Fatal(fmt.Sprintf("there was an error calling tokens.CloseHandleN() for the process: %s", err))
 		}
 		if verbose {
@@ -67,7 +67,7 @@ func main() {
 		fmt.Println("[DEBUG] Calling tokens.OpenProcessTokenN()...")
 	}
 	var TOKEN_QUERY int = 0x0008
-	token, err := tokens.OpenProcessTokenN(hProc,TOKEN_QUERY)
+	token, err := tokens.OpenProcessTokenN(hProc, TOKEN_QUERY)
 	if err != nil {
 		log.Fatal(fmt.Sprintf("there was an error calling tokens.OpenProcessTokenN(): %s", err))
 	}
@@ -147,17 +147,21 @@ func main() {
 		privs = append(privs, priv)
 	}
 
+	if debug {
+		fmt.Printf("[DEBUG] Privilege LUID_AND_ATTRIBUTES:\n%+v", privs)
+	}
+
 	fmt.Printf(
 		"[+] Process ID %d access token integrity level: %s, privileges (%d):\n",
 		*pid, tokens.IntegrityLevelToString(integrityLevel), privilegeCount,
 	)
 	for _, v := range privs {
 		p, err := tokens.LookupPrivilegeName(v.Luid)
-		if err != nil{
+		if err != nil {
 			log.Fatal(err)
 		}
 		a := tokens.PrivilegeAttributeToString(v.Attributes)
-		if a == ""{
+		if a == "" {
 			fmt.Printf("[+] %s\n", p)
 		} else {
 			fmt.Printf("[+] %s (%s)\n", p, a)

@@ -17,14 +17,14 @@ const (
 )
 
 const (
-	LOGON_WITH_PROFILE uint32 = 0x1
+	LOGON_WITH_PROFILE        uint32 = 0x1
 	LOGON_NETCREDENTIALS_ONLY uint32 = 0x2
 )
 
 // OpenProcessG Opens an existing local process object and returns a handle to it
 // The "G" at the end of the function name is for Golang because it uses the golang.org/x/sys/windows Go package
 // https://docs.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-openprocess
-func OpenProcessG (pid uint32) (handle windows.Handle, err error){
+func OpenProcessG(pid uint32) (handle windows.Handle, err error) {
 	handle, err = windows.OpenProcess(windows.PROCESS_QUERY_INFORMATION, true, pid)
 	if err != nil {
 		err = fmt.Errorf("there was an error calling OpenProcess: %s", err)
@@ -35,7 +35,7 @@ func OpenProcessG (pid uint32) (handle windows.Handle, err error){
 // OpenProcessN Opens an existing local process object and returns a handle to it
 // The "N" in the function name is for Native as it avoids using external packages
 // https://docs.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-openprocess
-func OpenProcessN (ProcessId uint32, DesiredAccess uint32, InheritHandle bool) (hProc *unsafe.Pointer, err error){
+func OpenProcessN(ProcessId uint32, DesiredAccess uint32, InheritHandle bool) (hProc *unsafe.Pointer, err error) {
 
 	Kernel32 := windows.NewLazySystemDLL("Kernel32.dll")
 	OpenProcess := Kernel32.NewProc("OpenProcess")
@@ -61,105 +61,43 @@ func OpenProcessN (ProcessId uint32, DesiredAccess uint32, InheritHandle bool) (
 	return &pHandle, nil
 }
 
-// CreateProcessWithToken creates a new process as the user associated with the passed in token
-// This requires administrative privileges or at least the SE_IMPERSONATE_NAME privilege
-func CreateProcessWithToken(token windows.Token, application string, args string) (err error){
-	// TODO check for SE_IMPERSONATE_NAME privilege
-	if application == ""{
-		err = fmt.Errorf("a program must be provided for the CreateProcessWithToken call")
-		return
-	}
-
-	Advapi32 := windows.NewLazySystemDLL("Advapi32.dll")
-	CreateProcessWithToken := Advapi32.NewProc("CreateProcessWithTokenW")
-
-	// Convert the program to a LPCWSTR
-	lpApplicationName, err := syscall.UTF16PtrFromString(application)
-	if err != nil {
-		err = fmt.Errorf("there was an error converting the application name \"%s\" to LPCWSTR: %s", application, err)
-		return
-	}
-
-	// Convert the program to a LPCWSTR
-	lpCommandLine, err := syscall.UTF16PtrFromString(args)
-	if err != nil {
-		err = fmt.Errorf("there was an error converting the application arguments \"%s\" to LPCWSTR: %s", args, err)
-		return
-	}
-
-	// BOOL CreateProcessWithTokenW(
-	//  [in]                HANDLE                hToken,
-	//  [in]                DWORD                 dwLogonFlags,
-	//  [in, optional]      LPCWSTR               lpApplicationName,
-	//  [in, out, optional] LPWSTR                lpCommandLine,
-	//  [in]                DWORD                 dwCreationFlags,
-	//  [in, optional]      LPVOID                lpEnvironment,
-	//  [in, optional]      LPCWSTR               lpCurrentDirectory,
-	//  [in]                LPSTARTUPINFOW        lpStartupInfo,
-	//  [out]               LPPROCESS_INFORMATION lpProcessInformation
-	//);
-
-	lpStartupInfo := &windows.StartupInfo{}
-	lpProcessInformation := &windows.ProcessInformation{}
-
-	fmt.Printf("[DEBUG] Calling CreateProcessWithToken(%v, %v, %s, %s)\n", token, LOGON_NETCREDENTIALS_ONLY, application, args)
-	_, _, err = CreateProcessWithToken.Call(
-		uintptr(unsafe.Pointer(&token)),
-		uintptr(LOGON_NETCREDENTIALS_ONLY),
-		uintptr(unsafe.Pointer(&lpApplicationName)),
-		uintptr(unsafe.Pointer(&lpCommandLine)),
-		0,
-		0,
-		0,
-		uintptr(unsafe.Pointer(lpStartupInfo)),
-		uintptr(unsafe.Pointer(lpProcessInformation)),
-		)
-	if err != syscall.Errno(0){
-		err = fmt.Errorf("there was an error calling CreateProcessWithToken: %s", err)
-		return
-	}
-
-	err = nil
-	return
-}
-
 // CreateProcessWithLogonG creates a new process and its primary thread. Then the new process runs the specified
 // executable file in the security context of the specified credentials (user, domain, and password).
 // It can optionally load the user profile for a specified user.
 // The "G" at the end of the function name is for Golang because it uses the golang.org/x/sys/windows Go package
 // https://docs.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createprocesswithlogonw
-func CreateProcessWithLogonG(username string, domain string, password string, application string, args string, logon uint32)(lpProcessInformation windows.ProcessInformation, err error){
+func CreateProcessWithLogonG(username string, domain string, password string, application string, args string, logon uint32) (lpProcessInformation windows.ProcessInformation, err error) {
 	if username == "" {
 		err = fmt.Errorf("a username must be provided for the CreateProcessWithLogon call")
 		return
 	}
 
-	if password == ""{
+	if password == "" {
 		err = fmt.Errorf("a password must be provided for the CreateProcessWithLogon call")
 		return
 	}
 
-	if application == ""{
+	if application == "" {
 		err = fmt.Errorf("an application must be provided for the CreateProcessWithLogon call")
 		return
 	}
 
 	// Check for UPN format (e.g., rastley@acme.com)
-	if strings.Contains(username, "@"){
+	if strings.Contains(username, "@") {
 		temp := strings.Split(username, "@")
 		username = temp[0]
 		domain = temp[1]
 	}
 
 	// Check for domain format (e.g., ACME\rastley)
-	if strings.Contains(username, "\\"){
+	if strings.Contains(username, "\\") {
 		temp := strings.Split(username, "\\")
 		username = temp[1]
 		domain = temp[0]
 	}
 
 	// Check for an empty or missing domain; used with local user accounts
-	if domain == ""{
+	if domain == "" {
 		domain = "."
 	}
 
@@ -229,8 +167,8 @@ func CreateProcessWithLogonG(username string, domain string, password string, ap
 		0,
 		uintptr(unsafe.Pointer(lpStartupInfo)),
 		uintptr(unsafe.Pointer(&lpProcessInformation)),
-		)
-	if err != syscall.Errno(0){
+	)
+	if err != syscall.Errno(0) {
 		err = fmt.Errorf("there was an error calling CreateProcessWithLogon: %s", err)
 		return
 	}
@@ -244,38 +182,38 @@ func CreateProcessWithLogonG(username string, domain string, password string, ap
 // It can optionally load the user profile for a specified user.
 // The "N" in the function name is for Native as it avoids using external packages
 // https://docs.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createprocesswithlogonw
-func CreateProcessWithLogonN(username string, domain string, password string, application string, args string, logon uint32)(lpProcessInformation windows.ProcessInformation, err error){
+func CreateProcessWithLogonN(username string, domain string, password string, application string, args string, logon uint32) (lpProcessInformation windows.ProcessInformation, err error) {
 	if username == "" {
 		err = fmt.Errorf("a username must be provided for the CreateProcessWithLogon call")
 		return
 	}
 
-	if password == ""{
+	if password == "" {
 		err = fmt.Errorf("a password must be provided for the CreateProcessWithLogon call")
 		return
 	}
 
-	if application == ""{
+	if application == "" {
 		err = fmt.Errorf("an application must be provided for the CreateProcessWithLogon call")
 		return
 	}
 
 	// Check for UPN format (e.g., rastley@acme.com)
-	if strings.Contains(username, "@"){
+	if strings.Contains(username, "@") {
 		temp := strings.Split(username, "@")
 		username = temp[0]
 		domain = temp[1]
 	}
 
 	// Check for domain format (e.g., ACME\rastley)
-	if strings.Contains(username, "\\"){
+	if strings.Contains(username, "\\") {
 		temp := strings.Split(username, "\\")
 		username = temp[1]
 		domain = temp[0]
 	}
 
 	// Check for an empty or missing domain; used with local user accounts
-	if domain == ""{
+	if domain == "" {
 		domain = "."
 	}
 
@@ -346,7 +284,7 @@ func CreateProcessWithLogonN(username string, domain string, password string, ap
 		uintptr(unsafe.Pointer(lpStartupInfo)),
 		uintptr(unsafe.Pointer(&lpProcessInformation)),
 	)
-	if err != syscall.Errno(0){
+	if err != syscall.Errno(0) {
 		err = fmt.Errorf("there was an error calling CreateProcessWithLogon: %s", err)
 		return
 	}
@@ -358,13 +296,13 @@ func CreateProcessWithLogonN(username string, domain string, password string, ap
 // GetCurrentProcessN retrieves a pseudo handle for the current process.
 // The "N" in the function name is for Native as it avoids using external packages
 // https://docs.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getcurrentprocess
-func GetCurrentProcessN()(hProc *unsafe.Pointer, err error){
+func GetCurrentProcessN() (hProc *unsafe.Pointer, err error) {
 	Kernel32 := windows.NewLazySystemDLL("Kernel32.dll")
 	GetCurrentProcess := Kernel32.NewProc("GetCurrentProcess")
 
 	// HANDLE GetCurrentProcess();
 	handle, _, err := GetCurrentProcess.Call()
-	if err != syscall.Errno(0){
+	if err != syscall.Errno(0) {
 		err = fmt.Errorf("there was an error calling kernel32!GetCurrentProcess: %s", err)
 		return
 	}
@@ -383,7 +321,7 @@ func GetCurrentThreadN() (hThread *unsafe.Pointer, err error) {
 	GetCurrentThread := Kernel32.NewProc("GetCurrentThread")
 
 	handle, _, err := GetCurrentThread.Call()
-	if err != syscall.Errno(0){
+	if err != syscall.Errno(0) {
 		err = fmt.Errorf("there was an error calling Kernel32!GetCurrentThread(): %s", err)
 		return
 	}
@@ -396,7 +334,7 @@ func GetCurrentThreadN() (hThread *unsafe.Pointer, err error) {
 // You do not need to close the pseudo-handle when you no longer need it.
 // The "N" in the function name is for Native as it avoids using external packages
 // https://docs.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getcurrentprocesstoken
-func GetCurrentProcessTokenN()  *unsafe.Pointer {
+func GetCurrentProcessTokenN() *unsafe.Pointer {
 	handle := unsafe.Pointer(^uintptr(4 - 1))
 	return &handle
 }
@@ -406,7 +344,7 @@ func GetCurrentProcessTokenN()  *unsafe.Pointer {
 // The "N" in the function name is for Native as it avoids using external packages
 // https://docs.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getcurrentthreadtoken
 func GetCurrentThreadTokenN() *unsafe.Pointer {
-	handle := unsafe.Pointer(^uintptr(5-1))
+	handle := unsafe.Pointer(^uintptr(5 - 1))
 	return &handle
 }
 
@@ -415,7 +353,7 @@ func GetCurrentThreadTokenN() *unsafe.Pointer {
 // The "N" in the function name is for Native as it avoids using external packages
 // https://docs.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getcurrentthreadeffectivetoken
 func GetCurrentThreadEffectiveTokenN() *unsafe.Pointer {
-	handle := unsafe.Pointer(^uintptr(6-1))
+	handle := unsafe.Pointer(^uintptr(6 - 1))
 	return &handle
 }
 
