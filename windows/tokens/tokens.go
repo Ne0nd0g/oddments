@@ -54,11 +54,10 @@ const (
 //  SecurityDelegation
 //} SECURITY_IMPERSONATION_LEVEL, *PSECURITY_IMPERSONATION_LEVEL;
 const (
-	SE_PRIVILEGE_USED_FOR_ACCESS uint32 = iota
-	SE_PRIVILEGE_ENABLED_BY_DEFAULT
-	SE_PRIVILEGE_ENABLED
-	_
-	SE_PRIVILEGE_REMOVED
+	SE_PRIVILEGE_ENABLED_BY_DEFAULT = 0x00000001
+	SE_PRIVILEGE_ENABLED            = 0x00000002
+	SE_PRIVILEGE_REMOVED            = 0x00000003
+	SE_PRIVILEGE_USED_FOR_ACCESS    = 0x80000000
 )
 
 // SE_ Privilege Constants (Authorization)
@@ -186,6 +185,10 @@ const (
 	TokenIsLessPrivilegedAppContainer
 	TokenIsSandboxed
 	MaxTokenInfoClass
+)
+
+const (
+	MAXIMUM_ALLOWED uint32 = 0x02000000
 )
 
 // StealToken opens the provided input process, duplicates its access token, and returns it
@@ -552,8 +555,6 @@ func PrivilegeCheckN(hToken *unsafe.Pointer, privs PRIVILEGE_SET) (hasPriv bool,
 		return
 	}
 	err = nil
-	fmt.Printf("[++++++++++] Privs: %+v\n", privs)
-	fmt.Printf("[++++++++++] Has: %v\n", hasPriv)
 	return
 }
 
@@ -696,6 +697,40 @@ func EnablePrivilege(privilege string) (err error) {
 	}
 
 	return AdjustTokenPrivilegesG(hToken, false, privilege)
+}
+
+// hasPrivilege checks the provided access token to see if it contains the provided privilege
+func hasPrivilege(token *unsafe.Pointer, privilege LUID) (bool, error) {
+	// Get privileges for the passed in access token
+	TokenInformation, _, err := GetTokenInformationN(token, TokenPrivileges)
+	if err != nil {
+		return false, fmt.Errorf("there was an error calling GetTokenInformationN: %s", err)
+	}
+
+	var privilegeCount uint32
+	err = binary.Read(TokenInformation, binary.LittleEndian, &privilegeCount)
+	if err != nil {
+		return false, fmt.Errorf("there was an error reading TokenPrivileges bytes to privilegeCount: %s", err)
+	}
+
+	// Read in the LUID and Attributes
+	var privs []LUID_AND_ATTRIBUTES
+	for i := 1; i <= int(privilegeCount); i++ {
+		var priv LUID_AND_ATTRIBUTES
+		err = binary.Read(TokenInformation, binary.LittleEndian, &priv)
+		if err != nil {
+			return false, fmt.Errorf("there was an error reading LUIDAttributes to bytes: %s", err)
+		}
+		privs = append(privs, priv)
+	}
+
+	// Iterate over provided token's privileges and return true if it is present
+	for _, priv := range privs {
+		if priv.Luid == privilege {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // GetUserNameExG retrieves the name of the user or other security principal associated with the calling thread
@@ -1152,30 +1187,24 @@ func CreateProcessWithTokenN(token *unsafe.Pointer, application string, args str
 		return
 	}
 
-	// TODO Check that the calling process has the SE_IMPERSONATE_NAME privilege
+	// Verify that the calling process has the SE_IMPERSONATE_NAME privilege
 	luid, err := LookupPrivilegeValueN("SeImpersonatePrivilege")
 	if err != nil {
 		return
 	}
 
-	l := LUID_AND_ATTRIBUTES{
-		Luid:       luid,
-		Attributes: SE_PRIVILEGE_ENABLED,
+	hasPriv, err := hasPrivilege(process.GetCurrentProcessTokenN(), luid)
+	if err != nil {
+		return fmt.Errorf("the provided access token does not have the SeImpersonatePrivilege and can't be used to create a process")
 	}
-
-	// Build the privilege set
-	privs := PRIVILEGE_SET{
-		PrivilegeCount: 1,
-		Control:        0,
-		Privilege:      []LUID_AND_ATTRIBUTES{l},
-	}
-	fmt.Printf("PRIVILEGE_SET: %+v", privs)
-	hasPriv, err := PrivilegeCheckN(token, privs)
 
 	// TODO try to enable the priv before returning with an error
 	if !hasPriv {
 		return fmt.Errorf("the provided access token does not have the SeImpersonatePrivilege and therefore can't be used to call CreateProcessWithToken")
 	}
+
+	// TODO verify the provided token is a PRIMARY token
+	// TODO verify the provided token has the TOKEN_QUERY, TOKEN_DUPLICATE, and TOKEN_ASSIGN_PRIMARY access rights
 
 	Advapi32 := windows.NewLazySystemDLL("Advapi32.dll")
 	CreateProcessWithToken := Advapi32.NewProc("CreateProcessWithTokenW")
@@ -1209,12 +1238,11 @@ func CreateProcessWithTokenN(token *unsafe.Pointer, application string, args str
 	lpStartupInfo := &windows.StartupInfo{}
 	lpProcessInformation := &windows.ProcessInformation{}
 
-	fmt.Printf("[DEBUG] Calling CreateProcessWithToken(%v, %v, %s, %s)\n", token, process.LOGON_NETCREDENTIALS_ONLY, application, args)
 	_, _, err = CreateProcessWithToken.Call(
-		uintptr(unsafe.Pointer(&token)),
+		uintptr(*token),
 		uintptr(process.LOGON_NETCREDENTIALS_ONLY),
-		uintptr(unsafe.Pointer(&lpApplicationName)),
-		uintptr(unsafe.Pointer(&lpCommandLine)),
+		uintptr(unsafe.Pointer(lpApplicationName)),
+		uintptr(unsafe.Pointer(lpCommandLine)),
 		0,
 		0,
 		0,
@@ -1228,6 +1256,31 @@ func CreateProcessWithTokenN(token *unsafe.Pointer, application string, args str
 
 	err = nil
 	return
+}
+
+// DuplicateTokenN function creates a new access token that duplicates an existing token.
+// This function can create either a primary token or an impersonation token.
+// The "N" in the function name is for Native as it avoids using external packages
+// https://docs.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-duplicatetokenex
+func DuplicateTokenN(hExistingToken *unsafe.Pointer, dwDesiredAccess uint32, ImpersonationLevel uint32, TokenType uint32) (*unsafe.Pointer, error) {
+	Advapi32 := windows.NewLazySystemDLL("Advapi32.dll")
+	DuplicateTokenEx := Advapi32.NewProc("DuplicateTokenEx")
+
+	// BOOL DuplicateTokenEx(
+	//  [in]           HANDLE                       hExistingToken,
+	//  [in]           DWORD                        dwDesiredAccess,
+	//  [in, optional] LPSECURITY_ATTRIBUTES        lpTokenAttributes,
+	//  [in]           SECURITY_IMPERSONATION_LEVEL ImpersonationLevel,
+	//  [in]           TOKEN_TYPE                   TokenType,
+	//  [out]          PHANDLE                      phNewToken
+	//);
+
+	var phNewToken unsafe.Pointer
+	ret, _, err := DuplicateTokenEx.Call(uintptr(*hExistingToken), uintptr(dwDesiredAccess), 0, uintptr(ImpersonationLevel), uintptr(TokenType), uintptr(unsafe.Pointer(&phNewToken)))
+	if err != syscall.Errno(0) || ret == 0 {
+		return nil, fmt.Errorf("there was an error calling Advapi32!DuplicateTokenEx with return code %d: %s", ret, err)
+	}
+	return &phNewToken, nil
 }
 
 // PRIVILEGE_SET specifies a set of privileges. It is also used to indicate which, if any, privileges are held by a

@@ -43,7 +43,6 @@ func GetPrivileges(token *unsafe.Pointer) (privileges []string, err error) {
 		privs = append(privs, priv)
 	}
 
-	fmt.Printf("[=========] %+v\n", privs)
 	// Convert to string equivalents
 	for _, v := range privs {
 		p, err := tokens.LookupPrivilegeName(v.Luid)

