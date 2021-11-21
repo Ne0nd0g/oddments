@@ -9,8 +9,8 @@ import (
 	"os"
 
 	// Oddments Internal
-	"oddments/pkg/process"
-	"oddments/windows/advapi32"
+	"github.com/Ne0nd0g/oddments/pkg/process"
+	"github.com/Ne0nd0g/oddments/windows/advapi32"
 )
 
 var verbose bool

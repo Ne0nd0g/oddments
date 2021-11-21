@@ -13,8 +13,8 @@ import (
 	"unsafe"
 
 	// Oddments Internal
-	"oddments/pkg/tokens"
-	"oddments/windows/advapi32"
+	"github.com/Ne0nd0g/oddments/pkg/tokens"
+	"github.com/Ne0nd0g/oddments/windows/advapi32"
 )
 
 // GetPrivileges enumerates the privileges and attributes for the provided access token handle

@@ -11,8 +11,8 @@ import (
 	"time"
 
 	// Oddments Internal
-	"oddments/windows/kernel32"
-	"oddments/windows/user32"
+	"github.com/Ne0nd0g/oddments/windows/kernel32"
+	"github.com/Ne0nd0g/oddments/windows/user32"
 )
 
 var verbose bool

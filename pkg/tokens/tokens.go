@@ -18,8 +18,8 @@ import (
 	"golang.org/x/sys/windows"
 
 	// Oddments Internal
-	"oddments/pkg/process"
-	"oddments/windows/advapi32"
+	"github.com/Ne0nd0g/oddments/pkg/process"
+	"github.com/Ne0nd0g/oddments/windows/advapi32"
 )
 
 // AdjustTokenPrivilegesG enables or disables privileges in the specified access token.

@@ -1,4 +1,4 @@
-module oddments
+module github.com/Ne0nd0g/oddments
 
 go 1.16
 

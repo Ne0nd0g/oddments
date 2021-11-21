@@ -16,7 +16,7 @@ import (
 	"golang.org/x/sys/windows"
 
 	// Oddments Internal
-	"oddments/windows/advapi32"
+	"github.com/Ne0nd0g/oddments/windows/advapi32"
 )
 
 // CreateProcessWithLogonG creates a new process and its primary thread. Then the new process runs the specified

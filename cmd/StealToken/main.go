@@ -11,11 +11,11 @@ import (
 	"os"
 
 	// Oddments Internal
-	"oddments/pkg/privs"
-	"oddments/pkg/process"
-	"oddments/pkg/tokens"
-	"oddments/windows/advapi32"
-	"oddments/windows/kernel32"
+	"github.com/Ne0nd0g/oddments/pkg/privs"
+	"github.com/Ne0nd0g/oddments/pkg/process"
+	"github.com/Ne0nd0g/oddments/pkg/tokens"
+	"github.com/Ne0nd0g/oddments/windows/advapi32"
+	"github.com/Ne0nd0g/oddments/windows/kernel32"
 )
 
 var verbose bool

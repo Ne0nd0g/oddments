@@ -18,8 +18,8 @@ import (
 	"golang.org/x/sys/windows"
 
 	// Oddments Internal
-	"oddments/pkg/tokens"
-	"oddments/windows/advapi32"
+	"github.com/Ne0nd0g/oddments/pkg/tokens"
+	"github.com/Ne0nd0g/oddments/windows/advapi32"
 )
 
 var verbose bool
