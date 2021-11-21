@@ -5,13 +5,17 @@
 package main
 
 import (
+	// Standard
 	"encoding/binary"
 	"flag"
 	"fmt"
 	"log"
-	"oddments/windows/process"
-	"oddments/windows/tokens"
 	"os"
+
+	// Oddments Internal
+	"oddments/pkg/tokens"
+	"oddments/windows/advapi32"
+	"oddments/windows/kernel32"
 )
 
 var verbose bool
@@ -40,7 +44,7 @@ func main() {
 		fmt.Println("[DEBUG] Calling windows.OpenProcess()...")
 	}
 	var PROCESS_QUERY_INFORMATION uint32 = 0x0400
-	hProc, err := process.OpenProcessN(uint32(*pid), PROCESS_QUERY_INFORMATION, true)
+	hProc, err := kernel32.OpenProcessN(uint32(*pid), PROCESS_QUERY_INFORMATION, true)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -53,7 +57,7 @@ func main() {
 		if debug {
 			fmt.Println("[DEBUG] Calling tokens.CloseHandleN()...")
 		}
-		err := tokens.CloseHandleN(hProc)
+		err := kernel32.CloseHandleN(hProc)
 		if err != nil {
 			log.Fatal(fmt.Sprintf("there was an error calling tokens.CloseHandleN() for the process: %s", err))
 		}
@@ -67,7 +71,7 @@ func main() {
 		fmt.Println("[DEBUG] Calling tokens.OpenProcessTokenN()...")
 	}
 	var TOKEN_QUERY int = 0x0008
-	token, err := tokens.OpenProcessTokenN(hProc, TOKEN_QUERY)
+	token, err := advapi32.OpenProcessTokenN(hProc, TOKEN_QUERY)
 	if err != nil {
 		log.Fatal(fmt.Sprintf("there was an error calling tokens.OpenProcessTokenN(): %s", err))
 	}
@@ -80,7 +84,7 @@ func main() {
 		if debug {
 			fmt.Println("[DEBUG] Closing the token handle...")
 		}
-		err := tokens.CloseHandleN(token)
+		err := kernel32.CloseHandleN(token)
 		if err != nil {
 			log.Fatal(fmt.Sprintf("there was an error calling tokens.CloseHandleN(): %s", err))
 		}
@@ -94,7 +98,7 @@ func main() {
 		fmt.Println("[DEBUG] Calling tokens.GetTokenInformation() for TokenIntegrityLevel")
 	}
 	var TokenIntegrityLevel uint32 = 25
-	TokenIntegrityInformation, ReturnLength, err := tokens.GetTokenInformationN(token, TokenIntegrityLevel)
+	TokenIntegrityInformation, ReturnLength, err := advapi32.GetTokenInformationN(token, TokenIntegrityLevel)
 	if err != nil {
 		log.Fatal(fmt.Sprintf("there was an error calling tokens.GetTokenInformationN: %s", err))
 	}
@@ -116,7 +120,7 @@ func main() {
 		fmt.Println("[DEBUG] Calling tokens.GetTokenInformationN() for TokenPrivileges...")
 	}
 	var TokenPrivileges uint32 = 0x0003
-	TokenInformation, ReturnLength, err := tokens.GetTokenInformationN(token, TokenPrivileges)
+	TokenInformation, ReturnLength, err := advapi32.GetTokenInformationN(token, TokenPrivileges)
 	if err != nil {
 		log.Fatal(fmt.Sprintf("there was an error calling tokens.GetTokenInformationN: %s", err))
 	}
@@ -137,9 +141,9 @@ func main() {
 	}
 
 	// Read in the LUID and Attributes
-	var privs []tokens.LUID_AND_ATTRIBUTES
+	var privs []advapi32.LUID_AND_ATTRIBUTES
 	for i := 1; i <= int(privilegeCount); i++ {
-		var priv tokens.LUID_AND_ATTRIBUTES
+		var priv advapi32.LUID_AND_ATTRIBUTES
 		err = binary.Read(TokenInformation, binary.LittleEndian, &priv)
 		if err != nil {
 			log.Fatal(fmt.Sprintf("there was an error reading LUIDAttributes to bytes: %s", err))
@@ -156,7 +160,7 @@ func main() {
 		*pid, tokens.IntegrityLevelToString(integrityLevel), privilegeCount,
 	)
 	for _, v := range privs {
-		p, err := tokens.LookupPrivilegeName(v.Luid)
+		p, err := advapi32.LookupPrivilegeName(v.Luid)
 		if err != nil {
 			log.Fatal(err)
 		}

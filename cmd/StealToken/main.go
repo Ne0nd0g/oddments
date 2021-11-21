@@ -3,16 +3,19 @@
 package main
 
 import (
+	// Standard
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
-	privs "oddments/pkg/privs"
-	"oddments/windows/process"
 	"os"
 
-	// oddments
-	"oddments/windows/tokens"
+	// Oddments Internal
+	"oddments/pkg/privs"
+	"oddments/pkg/process"
+	"oddments/pkg/tokens"
+	"oddments/windows/advapi32"
+	"oddments/windows/kernel32"
 )
 
 var verbose bool
@@ -63,7 +66,7 @@ func main() {
 		fmt.Println("[DEBUG] Calling OpenProcess...")
 	}
 	var PROCESS_QUERY_INFORMATION uint32 = 0x0400
-	handle, err := process.OpenProcessN(uint32(*pid), PROCESS_QUERY_INFORMATION, true)
+	handle, err := kernel32.OpenProcessN(uint32(*pid), PROCESS_QUERY_INFORMATION, true)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -76,7 +79,7 @@ func main() {
 		if debug {
 			fmt.Println("[DEBUG] Calling CloseHandle on the process handle...")
 		}
-		err = tokens.CloseHandleN(handle)
+		err = kernel32.CloseHandleN(handle)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -95,7 +98,7 @@ func main() {
 	TOKEN_QUERY := 0x0008
 	DesiredAccess := TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | TOKEN_QUERY
 
-	token, err := tokens.OpenProcessTokenN(handle, DesiredAccess)
+	token, err := advapi32.OpenProcessTokenN(handle, DesiredAccess)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -108,7 +111,7 @@ func main() {
 		if debug {
 			fmt.Println("[DEBUG] Calling CloseHandle on the token handle...")
 		}
-		err = tokens.CloseHandleN(token)
+		err = kernel32.CloseHandleN(token)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -122,7 +125,7 @@ func main() {
 		if debug {
 			fmt.Println("[DEBUG] Calling tokens.ImpersonateLoggedOnUserN...")
 		}
-		err = tokens.ImpersonateLoggedOnUserN(token)
+		err = advapi32.ImpersonateLoggedOnUserN(token)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -187,7 +190,7 @@ func main() {
 		if debug {
 			fmt.Println("[DEBUG] Calling tokens.RevertTotSelfN()...")
 		}
-		err = tokens.RevertToSelfN()
+		err = advapi32.RevertToSelfN()
 		if err != nil {
 			fmt.Printf("[!] %s\n", err)
 		}
@@ -205,7 +208,7 @@ func main() {
 		var MAXIMUM_ALLOWED uint32 = 0x02000000
 		var SecurityImpersonation uint32 = 0x2
 		var TokenPrimary uint32 = 0x1
-		dupToken, err := tokens.DuplicateTokenN(token, MAXIMUM_ALLOWED, SecurityImpersonation, TokenPrimary)
+		dupToken, err := advapi32.DuplicateTokenN(token, MAXIMUM_ALLOWED, SecurityImpersonation, TokenPrimary)
 		if err != nil {
 			log.Fatal(err)
 		}

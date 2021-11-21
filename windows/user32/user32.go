@@ -1,10 +1,13 @@
 package user32
 
 import (
+	// Standard
 	"fmt"
-	"golang.org/x/sys/windows"
 	"syscall"
 	"unsafe"
+
+	// X Packages
+	"golang.org/x/sys/windows"
 )
 
 var User32 = windows.NewLazySystemDLL("User32.dll")

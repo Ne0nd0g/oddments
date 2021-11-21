@@ -2,6 +2,7 @@
 
 // Package privs contains wrapper functions that interact with Windows Access Tokens
 // Many of the functions are used to enumerate privs and return them as a string
+
 package privs
 
 import (
@@ -11,14 +12,15 @@ import (
 	"log"
 	"unsafe"
 
-	// Oddments
-	"oddments/windows/tokens"
+	// Oddments Internal
+	"oddments/pkg/tokens"
+	"oddments/windows/advapi32"
 )
 
 // GetPrivileges enumerates the privileges and attributes for the provided access token handle
 // and returns them as a slice of strings
 func GetPrivileges(token *unsafe.Pointer) (privileges []string, err error) {
-	TokenInformation, _, err := tokens.GetTokenInformationN(token, tokens.TokenPrivileges)
+	TokenInformation, _, err := advapi32.GetTokenInformationN(token, advapi32.TokenPrivileges)
 	if err != nil {
 		err = fmt.Errorf("there was an error calling tokens.GetTokenInformationN: %s", err)
 		return
@@ -32,9 +34,9 @@ func GetPrivileges(token *unsafe.Pointer) (privileges []string, err error) {
 	}
 
 	// Read in the LUID and Attributes
-	var privs []tokens.LUID_AND_ATTRIBUTES
+	var privs []advapi32.LUID_AND_ATTRIBUTES
 	for i := 1; i <= int(privilegeCount); i++ {
-		var priv tokens.LUID_AND_ATTRIBUTES
+		var priv advapi32.LUID_AND_ATTRIBUTES
 		err = binary.Read(TokenInformation, binary.LittleEndian, &priv)
 		if err != nil {
 			err = fmt.Errorf("there was an error reading LUIDAttributes to bytes: %s", err)
@@ -45,7 +47,7 @@ func GetPrivileges(token *unsafe.Pointer) (privileges []string, err error) {
 
 	// Convert to string equivalents
 	for _, v := range privs {
-		p, err := tokens.LookupPrivilegeName(v.Luid)
+		p, err := advapi32.LookupPrivilegeName(v.Luid)
 		if err != nil {
 			log.Fatal(err)
 		}

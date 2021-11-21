@@ -5,15 +5,21 @@
 package main
 
 import (
+	// Standard
 	"bytes"
 	"encoding/binary"
 	"flag"
 	"fmt"
-	"golang.org/x/sys/windows"
 	"log"
-	"oddments/windows/tokens"
 	"os"
 	"syscall"
+
+	// X Packages
+	"golang.org/x/sys/windows"
+
+	// Oddments Internal
+	"oddments/pkg/tokens"
+	"oddments/windows/advapi32"
 )
 
 var verbose bool
@@ -56,7 +62,7 @@ func main() {
 			fmt.Println("[DEBUG] Calling windows.CloseHandle()...")
 		}
 		err := windows.CloseHandle(hProc)
-		if err != nil{
+		if err != nil {
 			log.Fatal(fmt.Sprintf("there was an error calling windows.CloseHandle() for the process: %s", err))
 		}
 		if verbose {
@@ -139,16 +145,14 @@ func main() {
 
 	fmt.Printf("[+] Process ID %d access token privileges:\n", *pid)
 	for _, v := range privs {
-		var luid tokens.LUID
+		var luid advapi32.LUID
 		luid.HighPart = v.Luid.HighPart
 		luid.LowPart = v.Luid.LowPart
-		p, err := tokens.LookupPrivilegeName(luid)
-		if err != nil{
+		p, err := advapi32.LookupPrivilegeName(luid)
+		if err != nil {
 			log.Fatal(err)
 		}
 		fmt.Printf("[+] Privilege: %s, Attribute: %s\n", p, tokens.PrivilegeAttributeToString(v.Attributes))
 	}
-
-
 
 }

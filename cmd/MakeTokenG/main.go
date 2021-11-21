@@ -3,12 +3,16 @@
 package main
 
 import (
+	// Standard
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
-	"oddments/windows/tokens"
 	"os"
+
+	// Oddments Internal
+	"oddments/pkg/tokens"
+	"oddments/windows/advapi32"
 )
 
 var verbose bool
@@ -27,7 +31,7 @@ func main() {
 	}
 	flag.Parse()
 
-	if *user == "" || *pass == ""{
+	if *user == "" || *pass == "" {
 		flag.Usage()
 	}
 
@@ -36,7 +40,7 @@ func main() {
 		fmt.Printf("[DEBUG] Calling LogonUser to create a new type 9 logon session for %s...\n", *user)
 	}
 
-	token, err := tokens.LogonUserG(*user,*pass,*domain, tokens.LOGON32_LOGON_NEW_CREDENTIALS, tokens.LOGON32_PROVIDER_DEFAULT)
+	token, err := tokens.LogonUserG(*user, *pass, *domain, advapi32.LOGON32_LOGON_NEW_CREDENTIALS, advapi32.LOGON32_PROVIDER_DEFAULT)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -45,7 +49,7 @@ func main() {
 	}
 
 	//
-	defer func(){
+	defer func() {
 		err = token.Close()
 		if err != nil {
 			log.Fatal(err)
@@ -59,7 +63,7 @@ func main() {
 	if debug {
 		fmt.Printf("[DEBUG] Calling ImpersonateLoggedOnUser...")
 	}
-	err = tokens.ImpersonateLoggedOnUserG(token)
+	err = advapi32.ImpersonateLoggedOnUserG(token)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -98,8 +102,8 @@ func main() {
 	if debug {
 		fmt.Println("[DEBUG] Calling RevertToSelf to remove the impersonation token...")
 	}
-	err = tokens.RevertToSelfN()
-	if err != nil{
+	err = advapi32.RevertToSelfN()
+	if err != nil {
 		log.Fatal(err)
 	}
 	if verbose {

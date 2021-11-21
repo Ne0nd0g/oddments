@@ -8,8 +8,9 @@ import (
 	"log"
 	"os"
 
-	// Internal
-	"oddments/windows/process"
+	// Oddments Internal
+	"oddments/pkg/process"
+	"oddments/windows/advapi32"
 )
 
 var verbose bool
@@ -37,12 +38,12 @@ func main() {
 		fmt.Printf("[-] Creating process %s as %s with a password of %s\n", *proc, *user, *pass)
 	}
 
-	logonType := process.LOGON_WITH_PROFILE
+	logonType := advapi32.LOGON_WITH_PROFILE
 	if *netonly {
-		logonType = process.LOGON_NETCREDENTIALS_ONLY
+		logonType = advapi32.LOGON_NETCREDENTIALS_ONLY
 	}
 
-	procInfo, err := process.CreateProcessWithLogonG(*user, "", *pass, *proc,*args, logonType)
+	procInfo, err := process.CreateProcessWithLogonG(*user, "", *pass, *proc, *args, logonType)
 	if err != nil {
 		log.Fatal(err)
 	}
