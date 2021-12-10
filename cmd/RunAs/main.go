@@ -9,8 +9,8 @@ import (
 	"os"
 
 	// Oddments Internal
-	"oddments/pkg/process"
-	"oddments/windows/advapi32"
+	"github.com/Ne0nd0g/oddments/pkg/process"
+	"github.com/Ne0nd0g/oddments/windows/advapi32"
 )
 
 var verbose bool
@@ -43,7 +43,7 @@ func main() {
 		logonType = advapi32.LOGON_NETCREDENTIALS_ONLY
 	}
 
-	procInfo, err := process.CreateProcessWithLogonN(*user, "", *pass, *proc, *args, logonType)
+	procInfo, err := process.CreateProcessWithLogonN(*user, "", *pass, *proc, *args, logonType, false)
 	if err != nil {
 		log.Fatal(err)
 	}

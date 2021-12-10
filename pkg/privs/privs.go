@@ -19,9 +19,63 @@ import (
 	"golang.org/x/sys/windows"
 
 	// Oddments Internal
-	"oddments/pkg/tokens"
-	"oddments/windows/advapi32"
+	"github.com/Ne0nd0g/oddments/pkg/tokens"
+	"github.com/Ne0nd0g/oddments/windows/advapi32"
 )
+
+func GetPrivilegesG(token windows.Token) (privileges []string, err error) {
+	// Get the privileges and attributes
+	// Call to get structure size
+	var returnedLen uint32
+	err = windows.GetTokenInformation(token, windows.TokenPrivileges, nil, 0, &returnedLen)
+	if err != syscall.ERROR_INSUFFICIENT_BUFFER {
+		err = fmt.Errorf("there was an error calling windows.GetTokenInformation: %s", err)
+		return
+	}
+
+	// Call again to get the actual structure
+	info := bytes.NewBuffer(make([]byte, returnedLen))
+	err = windows.GetTokenInformation(token, windows.TokenPrivileges, &info.Bytes()[0], returnedLen, &returnedLen)
+	if err != nil {
+		err = fmt.Errorf("there was an error calling windows.GetTokenInformation: %s", err)
+		return
+	}
+
+	var privilegeCount uint32
+	err = binary.Read(info, binary.LittleEndian, &privilegeCount)
+	if err != nil {
+		err = fmt.Errorf("there was an error reading TokenPrivileges bytes to privilegeCount: %s", err)
+		return
+	}
+
+	// Read in the LUID and Attributes
+	var privs []windows.LUIDAndAttributes
+	for i := 1; i <= int(privilegeCount); i++ {
+		var priv windows.LUIDAndAttributes
+		err = binary.Read(info, binary.LittleEndian, &priv)
+		if err != nil {
+			err = fmt.Errorf("there was an error reading LUIDAttributes to bytes: %s", err)
+			return
+		}
+		privs = append(privs, priv)
+	}
+
+	// Convert to string equivalents
+	for _, v := range privs {
+		var p string
+		p, err = advapi32.LookupPrivilegeNameG(v.Luid)
+		if err != nil {
+			return
+		}
+		a := tokens.PrivilegeAttributeToString(v.Attributes)
+		if a == "" {
+			privileges = append(privileges, p)
+		} else {
+			privileges = append(privileges, fmt.Sprintf("%s (%s)", p, a))
+		}
+	}
+	return
+}
 
 // GetPrivileges enumerates the privileges and attributes for the provided access token handle
 // and returns them as a slice of strings
@@ -104,6 +158,27 @@ func ListPrivileges(pid int) (string, error) {
 		}
 	}()
 
+	// Get token integrity level
+	var TokenIntegrityLevel uint32 = 25
+	t := unsafe.Pointer(token)
+	TokenIntegrityInformation, ReturnLength, err := advapi32.GetTokenInformationN(&t, TokenIntegrityLevel)
+	if err != nil {
+		log.Fatal(fmt.Sprintf("there was an error calling tokens.GetTokenInformationN: %s", err))
+	}
+
+	// Read the buffer into a byte slice
+	bLabel := make([]byte, ReturnLength)
+	err = binary.Read(TokenIntegrityInformation, binary.LittleEndian, &bLabel)
+	if err != nil {
+		log.Fatal(fmt.Sprintf("there was an error reading bytes for the token integrity level: %s", err))
+	}
+
+	// Integrity level is in the Attributes portion of the structure, a DWORD, the last four bytes
+	// https://docs.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-token_mandatory_label
+	// https://docs.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-sid_and_attributes
+	integrityLevel := binary.LittleEndian.Uint32(bLabel[ReturnLength-4:])
+
+	// Get token privileges and attributes
 	// Call to get structure size
 	var returnedLen uint32
 	err = windows.GetTokenInformation(token, windows.TokenPrivileges, nil, 0, &returnedLen)
@@ -137,6 +212,10 @@ func ListPrivileges(pid int) (string, error) {
 
 	var data string
 
+	data += fmt.Sprintf(
+		"Process ID %d access token integrity level: %s, privileges (%d):\n",
+		pid, tokens.IntegrityLevelToString(integrityLevel), privilegeCount,
+	)
 	for _, v := range privs {
 		var luid advapi32.LUID
 		luid.HighPart = v.Luid.HighPart

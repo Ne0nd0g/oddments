@@ -12,6 +12,17 @@ import (
 
 var User32 = windows.NewLazySystemDLL("User32.dll")
 
+// STARTF A bitfield that determines whether certain STARTUPINFO members are used when the process creates a window.
+// https://docs.microsoft.com/en-us/windows/win32/api/processthreadsapi/ns-processthreadsapi-startupinfow
+const (
+	STARTF_USESHOWWINDOW uint32 = 0x00000001 // The wShowWindow member contains additional information.
+)
+
+// SW Show Window controls how the window is to be shown.
+// This parameter is ignored the first time an application calls ShowWindow, if the program that launched the
+// application provides a STARTUPINFO structure. Otherwise, the first time ShowWindow is called, the value should be
+// the value obtained by the WinMain function in its nCmdShow parameter.
+// https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-showwindow
 const (
 	SW_HIDE            int = iota // Hides the window and activates another window.
 	SW_SHOWNORMAL                 // Activates and displays a window. If the window is minimized or maximized, the system restores it to its original size and position. An application should specify this flag when displaying the window for the first time.

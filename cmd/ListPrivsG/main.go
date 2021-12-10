@@ -18,8 +18,8 @@ import (
 	"golang.org/x/sys/windows"
 
 	// Oddments Internal
-	"oddments/pkg/tokens"
-	"oddments/windows/advapi32"
+	"github.com/Ne0nd0g/oddments/pkg/tokens"
+	"github.com/Ne0nd0g/oddments/windows/advapi32"
 )
 
 var verbose bool
@@ -144,6 +144,12 @@ func main() {
 	}
 
 	fmt.Printf("[+] Process ID %d access token privileges:\n", *pid)
+	user, err := tokens.GetTokenUsername(token)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("[+] Username: %+v\n", user)
+
 	for _, v := range privs {
 		var luid advapi32.LUID
 		luid.HighPart = v.Luid.HighPart

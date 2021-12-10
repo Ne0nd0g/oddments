@@ -126,6 +126,20 @@ const (
 	SecurityDelegation
 )
 
+// SECURITY_ the identifier authority value identifies the agency that issued the SID.
+// https://docs.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-sid_identifier_authority
+const (
+	SECURITY_NULL_SID_AUTHORITY int = iota
+	SECURITY_WORLD_SID_AUTHORITY
+	SECURITY_LOCAL_SID_AUTHORITY
+	SECURITY_CREATOR_SID_AUTHORITY
+	SECURITY_NON_UNIQUE_AUTHORITY
+	SECURITY_NT_AUTHORITY
+	_
+	_
+	SECURITY_RESOURCE_MANAGER_AUTHORITY
+)
+
 // TOKEN_ Access Rights for Access-Token Objects
 // https://docs.microsoft.com/en-us/windows/win32/secauthz/access-rights-for-access-token-objects
 // https://referencesource.microsoft.com/#System.Workflow.Runtime/DebugEngine/NativeMethods.cs,ba613dc523f12d3e,references
@@ -263,67 +277,33 @@ func AdjustTokenPrivilegesN(hToken windows.Token, disable bool, priv string) (er
 	return
 }
 
-// CreateProcessWithLogonG Creates a new process and its primary thread.
-// Then the new process runs the specified executable file in the security context of the specified credentials
-// (user, domain, and password). It can optionally load the user profile for a specified user.
-// The "N" in the function name is for Native as it avoids using external packages
-// https://docs.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createprocesswithlogonw
-func CreateProcessWithLogonG(lpUsername *uint16, lpDomain *uint16, lpPassword *uint16, dwLogonFlags uint32, lpApplicationName *uint16, lpCommandLine *uint16, dwCreationFlags uint32, lpEnvironment uintptr, lpCurrentDirectory *uint16, lpStartupInfo *windows.StartupInfo, lpProcessInformation *windows.ProcessInformation) error {
-	CreateProcessWithLogon := Advapi32.NewProc("CreateProcessWithLogonW")
+// ConvertSidToStringSidG function converts a security identifier (SID) to a string format suitable for display, storage, or transmission.
+// The "G" at the end of the function name is for Golang because it uses the golang.org/x/sys/windows Go package
+// https://docs.microsoft.com/en-us/windows/win32/api/sddl/nf-sddl-convertsidtostringsida
+func ConvertSidToStringSidG(sid *windows.SID, stringSid **uint16) error {
+	return windows.ConvertSidToStringSid(sid, stringSid)
+}
 
-	// BOOL CreateProcessWithLogonW(
-	//  [in]                LPCWSTR               lpUsername,
-	//  [in, optional]      LPCWSTR               lpDomain,
-	//  [in]                LPCWSTR               lpPassword,
-	//  [in]                DWORD                 dwLogonFlags,
-	//  [in, optional]      LPCWSTR               lpApplicationName,
-	//  [in, out, optional] LPWSTR                lpCommandLine,
-	//  [in]                DWORD                 dwCreationFlags,
-	//  [in, optional]      LPVOID                lpEnvironment,
-	//  [in, optional]      LPCWSTR               lpCurrentDirectory,
-	//  [in]                LPSTARTUPINFOW        lpStartupInfo,
-	//  [out]               LPPROCESS_INFORMATION lpProcessInformation
+// ConvertSidToStringSidN function converts a security identifier (SID) to a string format suitable for display, storage, or transmission.
+// The "N" in the function name is for Native as it avoids using external packages
+// https://docs.microsoft.com/en-us/windows/win32/api/sddl/nf-sddl-convertsidtostringsida
+func ConvertSidToStringSidN() error {
+	ConvertSidToStringSid := Advapi32.NewProc("ConvertSidToStringSidW")
+	// BOOL ConvertSidToStringSidA(
+	//  [in]  PSID  Sid,
+	//  [out] LPSTR *StringSid
 	//);
-	ret, _, err := CreateProcessWithLogon.Call(
-		uintptr(unsafe.Pointer(lpUsername)),
-		uintptr(unsafe.Pointer(lpDomain)),
-		uintptr(unsafe.Pointer(lpPassword)),
-		uintptr(dwLogonFlags),
-		uintptr(unsafe.Pointer(lpApplicationName)),
-		uintptr(unsafe.Pointer(lpCommandLine)),
-		uintptr(dwCreationFlags),
-		lpEnvironment,
-		uintptr(unsafe.Pointer(lpCurrentDirectory)),
-		uintptr(unsafe.Pointer(lpStartupInfo)),
-		uintptr(unsafe.Pointer(lpProcessInformation)),
-	)
-	if err != syscall.Errno(0) || ret == 0 {
-		return fmt.Errorf("there was an error calling CreateProcessWithLogon with return code %d: %s", ret, err)
-	}
+	ConvertSidToStringSid.Call()
 	return nil
 }
 
-// CreateProcessWithLogonN Creates a new process and its primary thread.
+// CreateProcessWithLogonG Creates a new process and its primary thread.
 // Then the new process runs the specified executable file in the security context of the specified credentials
 // (user, domain, and password). It can optionally load the user profile for a specified user.
 // The "G" at the end of the function name is for Golang because it uses the golang.org/x/sys/windows Go package
 // https://docs.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createprocesswithlogonw
-func CreateProcessWithLogonN(lpUsername *uint16, lpDomain *uint16, lpPassword *uint16, dwLogonFlags uint32, lpApplicationName *uint16, lpCommandLine *uint16, dwCreationFlags uint32, lpEnvironment uintptr, lpCurrentDirectory *uint16, lpStartupInfo *StartupInfo, lpProcessInformation *ProcessInformation) error {
+func CreateProcessWithLogonG(lpUsername *uint16, lpDomain *uint16, lpPassword *uint16, dwLogonFlags uint32, lpApplicationName *uint16, lpCommandLine *uint16, dwCreationFlags uint32, lpEnvironment uintptr, lpCurrentDirectory *uint16, lpStartupInfo *windows.StartupInfo, lpProcessInformation *windows.ProcessInformation) error {
 	CreateProcessWithLogon := Advapi32.NewProc("CreateProcessWithLogonW")
-
-	// BOOL CreateProcessWithLogonW(
-	//  [in]                LPCWSTR               lpUsername,
-	//  [in, optional]      LPCWSTR               lpDomain,
-	//  [in]                LPCWSTR               lpPassword,
-	//  [in]                DWORD                 dwLogonFlags,
-	//  [in, optional]      LPCWSTR               lpApplicationName,
-	//  [in, out, optional] LPWSTR                lpCommandLine,
-	//  [in]                DWORD                 dwCreationFlags,
-	//  [in, optional]      LPVOID                lpEnvironment,
-	//  [in, optional]      LPCWSTR               lpCurrentDirectory,
-	//  [in]                LPSTARTUPINFOW        lpStartupInfo,
-	//  [out]               LPPROCESS_INFORMATION lpProcessInformation
-	//);
 
 	// Parse optional arguments
 	var domain uintptr
@@ -354,6 +334,19 @@ func CreateProcessWithLogonN(lpUsername *uint16, lpDomain *uint16, lpPassword *u
 		currentDirectory = uintptr(unsafe.Pointer(lpCurrentDirectory))
 	}
 
+	// BOOL CreateProcessWithLogonW(
+	//  [in]                LPCWSTR               lpUsername,
+	//  [in, optional]      LPCWSTR               lpDomain,
+	//  [in]                LPCWSTR               lpPassword,
+	//  [in]                DWORD                 dwLogonFlags,
+	//  [in, optional]      LPCWSTR               lpApplicationName, The function does not use the search path
+	//  [in, out, optional] LPWSTR                lpCommandLine, The maximum length of this string is 1024 characters.
+	//  [in]                DWORD                 dwCreationFlags,
+	//  [in, optional]      LPVOID                lpEnvironment,
+	//  [in, optional]      LPCWSTR               lpCurrentDirectory,
+	//  [in]                LPSTARTUPINFOW        lpStartupInfo,
+	//  [out]               LPPROCESS_INFORMATION lpProcessInformation
+	//);
 	ret, _, err := CreateProcessWithLogon.Call(
 		uintptr(unsafe.Pointer(lpUsername)),
 		domain,
@@ -373,9 +366,140 @@ func CreateProcessWithLogonN(lpUsername *uint16, lpDomain *uint16, lpPassword *u
 	return nil
 }
 
+// CreateProcessWithLogonN Creates a new process and its primary thread.
+// Then the new process runs the specified executable file in the security context of the specified credentials
+// (user, domain, and password). It can optionally load the user profile for a specified user.
+// The "N" in the function name is for Native as it avoids using external packages
+// https://docs.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createprocesswithlogonw
+func CreateProcessWithLogonN(lpUsername *uint16, lpDomain *uint16, lpPassword *uint16, dwLogonFlags uint32, lpApplicationName *uint16, lpCommandLine *uint16, dwCreationFlags uint32, lpEnvironment uintptr, lpCurrentDirectory *uint16, lpStartupInfo *StartupInfo, lpProcessInformation *ProcessInformation) error {
+	CreateProcessWithLogon := Advapi32.NewProc("CreateProcessWithLogonW")
+
+	// Parse optional arguments
+	var domain uintptr
+	if *lpDomain == 0 {
+		domain = 0
+	} else {
+		domain = uintptr(unsafe.Pointer(lpDomain))
+	}
+
+	var applicationName uintptr
+	if *lpApplicationName == 0 {
+		applicationName = 0
+	} else {
+		applicationName = uintptr(unsafe.Pointer(lpApplicationName))
+	}
+
+	var commandLine uintptr
+	if *lpCommandLine == 0 {
+		commandLine = 0
+	} else {
+		commandLine = uintptr(unsafe.Pointer(lpCommandLine))
+	}
+
+	var currentDirectory uintptr
+	if *lpCurrentDirectory == 0 {
+		currentDirectory = 0
+	} else {
+		currentDirectory = uintptr(unsafe.Pointer(lpCurrentDirectory))
+	}
+
+	// BOOL CreateProcessWithLogonW(
+	//  [in]                LPCWSTR               lpUsername,
+	//  [in, optional]      LPCWSTR               lpDomain,
+	//  [in]                LPCWSTR               lpPassword,
+	//  [in]                DWORD                 dwLogonFlags,
+	//  [in, optional]      LPCWSTR               lpApplicationName,
+	//  [in, out, optional] LPWSTR                lpCommandLine,
+	//  [in]                DWORD                 dwCreationFlags,
+	//  [in, optional]      LPVOID                lpEnvironment,
+	//  [in, optional]      LPCWSTR               lpCurrentDirectory,
+	//  [in]                LPSTARTUPINFOW        lpStartupInfo,
+	//  [out]               LPPROCESS_INFORMATION lpProcessInformation
+	//);
+
+	ret, _, err := CreateProcessWithLogon.Call(
+		uintptr(unsafe.Pointer(lpUsername)),
+		domain,
+		uintptr(unsafe.Pointer(lpPassword)),
+		uintptr(dwLogonFlags),
+		applicationName,
+		commandLine,
+		uintptr(dwCreationFlags),
+		lpEnvironment,
+		currentDirectory,
+		uintptr(unsafe.Pointer(lpStartupInfo)),
+		uintptr(unsafe.Pointer(lpProcessInformation)),
+	)
+	if err != syscall.Errno(0) || ret == 0 {
+		return fmt.Errorf("there was an error calling CreateProcessWithLogon with return code %d: %s", ret, err)
+	}
+	return nil
+}
+
+// CreateProcessWithTokenG Creates a new process and its primary thread.
+// The new process runs in the security context of the specified token.
+// It can optionally load the user profile for the specified user.
+// The "G" at the end of the function name is for Golang because it uses the golang.org/x/sys/windows Go package
+// https://docs.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createprocesswithtokenw
+func CreateProcessWithTokenG(hToken windows.Token, dwLogonFlags uint32, lpApplicationName *uint16, lpCommandLine *uint16, dwCreationFlags uint32, lpEnvironment uintptr, lpCurrentDirectory *uint16, lpStartupInfo *windows.StartupInfo, lpProcessInformation *windows.ProcessInformation) error {
+	// There was not a CreateProcessWithTokenW equivalent in the windows package at the time of writing
+	CreateProcessWithToken := Advapi32.NewProc("CreateProcessWithTokenW")
+
+	// Parse optional arguments
+	var applicationName uintptr
+	if *lpApplicationName == 0 {
+		applicationName = 0
+	} else {
+		applicationName = uintptr(unsafe.Pointer(lpApplicationName))
+	}
+
+	var commandLine uintptr
+	if *lpCommandLine == 0 {
+		commandLine = 0
+	} else {
+		commandLine = uintptr(unsafe.Pointer(lpCommandLine))
+	}
+
+	var currentDirectory uintptr
+	if *lpCurrentDirectory == 0 {
+		currentDirectory = 0
+	} else {
+		currentDirectory = uintptr(unsafe.Pointer(lpCurrentDirectory))
+	}
+
+	// BOOL CreateProcessWithTokenW(
+	//  [in]                HANDLE                hToken,
+	//  [in]                DWORD                 dwLogonFlags,
+	//  [in, optional]      LPCWSTR               lpApplicationName,
+	//  [in, out, optional] LPWSTR                lpCommandLine,
+	//  [in]                DWORD                 dwCreationFlags,
+	//  [in, optional]      LPVOID                lpEnvironment,
+	//  [in, optional]      LPCWSTR               lpCurrentDirectory,
+	//  [in]                LPSTARTUPINFOW        lpStartupInfo,
+	//  [out]               LPPROCESS_INFORMATION lpProcessInformation
+	//);
+	ret, _, err := CreateProcessWithToken.Call(
+		uintptr(hToken),
+		uintptr(dwLogonFlags),
+		applicationName,
+		commandLine,
+		uintptr(dwCreationFlags),
+		lpEnvironment,
+		//uintptr(unsafe.Pointer(lpCurrentDirectory)),
+		currentDirectory,
+		uintptr(unsafe.Pointer(lpStartupInfo)),
+		uintptr(unsafe.Pointer(lpProcessInformation)),
+	)
+	if err != syscall.Errno(0) || ret == 0 {
+		return fmt.Errorf("there was an error calling advapi32!CreateProcessWithTokenW with return code %d: %s", ret, err)
+	}
+	return nil
+}
+
 // CreateProcessWithTokenN Creates a new process and its primary thread.
 // The new process runs in the security context of the specified token.
 // It can optionally load the user profile for the specified user.
+// The "N" in the function name is for Native as it avoids using external packages
 // https://docs.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createprocesswithtokenw
 func CreateProcessWithTokenN(hToken *unsafe.Pointer, dwLogonFlags uint32, lpApplicationName *uint16, lpCommandLine *uint16, dwCreationFlags uint32, lpEnvironment uintptr, lpCurrentDirectory *uint16, lpStartupInfo *StartupInfo, lpProcessInformation *ProcessInformation) error {
 	CreateProcessWithToken := Advapi32.NewProc("CreateProcessWithTokenW")
@@ -550,6 +674,36 @@ func ImpersonateLoggedOnUserN(hToken *unsafe.Pointer) (err error) {
 	}
 	err = nil
 	return
+}
+
+// LookupPrivilegeNameG retrieves the name that corresponds to the privilege represented on a specific system by a
+// specified locally unique identifier (LUID).
+// The "G" at the end of the function name is for Golang because it uses the golang.org/x/sys/windows Go package
+// https://docs.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-lookupprivilegenamew
+func LookupPrivilegeNameG(luid windows.LUID) (privilege string, err error) {
+	LookupPrivilegeNameW := Advapi32.NewProc("LookupPrivilegeNameW")
+
+	// BOOL LookupPrivilegeNameW(
+	//  [in, optional]  LPCWSTR lpSystemName,
+	//  [in]            PLUID   lpLuid,
+	//  [out, optional] LPWSTR  lpName,
+	//  [in, out]       LPDWORD cchName
+	//);
+
+	// Call to determine the size
+	var cchName uint32
+	ret, _, err := LookupPrivilegeNameW.Call(0, uintptr(unsafe.Pointer(&luid)), 0, uintptr(unsafe.Pointer(&cchName)))
+	if err.Error() != "The data area passed to a system call is too small." {
+		return "", fmt.Errorf("there was an error calling advapi32!LookupPrivilegeName for %+v with return code %d: %s", luid, ret, err)
+	}
+
+	var lpName uint16
+	ret, _, err = LookupPrivilegeNameW.Call(0, uintptr(unsafe.Pointer(&luid)), uintptr(unsafe.Pointer(&lpName)), uintptr(unsafe.Pointer(&cchName)))
+	if err != syscall.Errno(0) || ret == 0 {
+		return "", fmt.Errorf("there was an error calling advapi32!LookupPrivilegeName with return code %d: %s", ret, err)
+	}
+
+	return windows.UTF16PtrToString(&lpName), nil
 }
 
 // LookupPrivilegeName retrieves the name that corresponds to the privilege represented on a specific system by a
@@ -787,6 +941,49 @@ type ProcessInformation struct {
 	ThreadId  uint32
 }
 
+// SID The security identifier (SID) structure is a variable-length structure used to uniquely identify users or groups.
+// https://docs.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-sid
+// typedef struct _SID {
+//  BYTE                     Revision;
+//  BYTE                     SubAuthorityCount;
+//  SID_IDENTIFIER_AUTHORITY IdentifierAuthority;
+//#if ...
+//  DWORD                    *SubAuthority[];
+//#else
+//  DWORD                    SubAuthority[ANYSIZE_ARRAY];
+//#endif
+//} SID, *PISID;
+type SID struct {
+	//Revision byte
+	//SubAuthorityCount byte
+	//IdentifierAuthority SID_IDENTIFIER_AUTHORITY
+}
+
+// SID_IDENTIFIER_AUTHORITY represents the top-level authority of a security identifier (SID).
+// https://docs.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-sid_identifier_authority
+// typedef struct _SID_IDENTIFIER_AUTHORITY {
+//  BYTE Value[6];
+//} SID_IDENTIFIER_AUTHORITY, *PSID_IDENTIFIER_AUTHORITY;
+type SID_IDENTIFIER_AUTHORITY struct {
+	Value [6]byte
+}
+
+// SID_AND_ATTRIBUTES structure represents a security identifier (SID) and its attributes.
+// SIDs are used to uniquely identify users or groups
+// https://docs.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-sid_and_attributes
+// typedef struct _SID_AND_ATTRIBUTES {
+//#if ...
+//  PISID Sid;
+//#else
+//  PSID  Sid;
+//#endif
+//  DWORD Attributes;
+//} SID_AND_ATTRIBUTES, *PSID_AND_ATTRIBUTES;
+type SID_AND_ATTRIBUTES struct {
+	Sid        *SID
+	Attributes uint32
+}
+
 // StartupInfo specifies the window station, desktop, standard handles, and appearance of the main window for a process at creation time.
 // https://docs.microsoft.com/en-us/windows/win32/api/processthreadsapi/ns-processthreadsapi-startupinfoa
 // https://pkg.go.dev/golang.org/x/sys/windows#StartupInfo
@@ -843,4 +1040,13 @@ type TOKEN_STATISTICS struct {
 	GroupCount         uint32
 	PrivilegeCount     uint32
 	ModifiedId         LUID
+}
+
+// TOKEN_USER structure identifies the user associated with an access token
+// https://docs.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-token_user
+// typedef struct _TOKEN_USER {
+//  SID_AND_ATTRIBUTES User;
+//} TOKEN_USER, *PTOKEN_USER;
+type TOKEN_USER struct {
+	User SID_AND_ATTRIBUTES
 }

@@ -10,6 +10,7 @@ Windows operating system.
 - [MakeToken](./cmd/MakeToken/README.md) - Create a Windows Access Token for another user and use it to remotely list the files on a remote host
 - [RunAs](./cmd/RunAs/README.md) - Run a program as another user; Includes _netonly_ functionality
 - [StealToken](./cmd/StealToken/README.md) - Steal a Windows Access Token from another process
+- [SSHClient](./cmd/SSHClient/README.md) - Execute commands and retrieve output through SSH (non-interactive)
 
 ## Library
 
