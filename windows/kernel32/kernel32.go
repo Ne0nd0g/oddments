@@ -100,8 +100,8 @@ func GetCurrentThreadN() (hThread *unsafe.Pointer, err error) {
 // OpenProcessG Opens an existing local process object and returns a handle to it
 // The "G" at the end of the function name is for Golang because it uses the golang.org/x/sys/windows Go package
 // https://docs.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-openprocess
-func OpenProcessG(pid uint32) (handle windows.Handle, err error) {
-	handle, err = windows.OpenProcess(windows.PROCESS_QUERY_INFORMATION, true, pid)
+func OpenProcessG(ProcessId uint32, DesiredAccess uint32, InheritHandle bool) (handle windows.Handle, err error) {
+	handle, err = windows.OpenProcess(DesiredAccess, InheritHandle, ProcessId)
 	if err != nil {
 		err = fmt.Errorf("there was an error calling OpenProcess: %s", err)
 	}

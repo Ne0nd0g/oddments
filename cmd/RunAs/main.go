@@ -43,7 +43,7 @@ func main() {
 		logonType = advapi32.LOGON_NETCREDENTIALS_ONLY
 	}
 
-	procInfo, err := process.CreateProcessWithLogonN(*user, "", *pass, *proc, *args, logonType)
+	procInfo, err := process.CreateProcessWithLogonN(*user, "", *pass, *proc, *args, logonType, false)
 	if err != nil {
 		log.Fatal(err)
 	}

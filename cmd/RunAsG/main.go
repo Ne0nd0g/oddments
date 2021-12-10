@@ -24,6 +24,7 @@ func main() {
 	proc := flag.String("process", "cmd.exe", "The process to run as the provided user")
 	args := flag.String("args", "", "Arguments to start the process with")
 	netonly := flag.Bool("netonly", false, "use if the credentials specified are for remote access only")
+	hide := flag.Bool("hide", false, "Hide the GUI window for the created process")
 	flag.Usage = func() {
 		flag.PrintDefaults()
 		os.Exit(0)
@@ -43,7 +44,7 @@ func main() {
 		logonType = advapi32.LOGON_NETCREDENTIALS_ONLY
 	}
 
-	procInfo, err := process.CreateProcessWithLogonG(*user, "", *pass, *proc, *args, logonType)
+	procInfo, err := process.CreateProcessWithLogonG(*user, "", *pass, *proc, *args, logonType, *hide)
 	if err != nil {
 		log.Fatal(err)
 	}

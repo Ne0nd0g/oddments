@@ -20,6 +20,7 @@ import (
 	// Oddments Internal
 	"github.com/Ne0nd0g/oddments/pkg/process"
 	"github.com/Ne0nd0g/oddments/windows/advapi32"
+	"github.com/Ne0nd0g/oddments/windows/kernel32"
 )
 
 // AdjustTokenPrivilegesG enables or disables privileges in the specified access token.
@@ -59,6 +60,87 @@ func AdjustTokenPrivilegesG(hToken windows.Token, disable bool, privilege string
 		return
 	}
 	err = nil
+	return
+}
+
+// CreateProcessWithTokenG creates a new process as the user associated with the passed in token
+// This requires administrative privileges or at least the SE_IMPERSONATE_NAME privilege
+// The "G" at the end of the function name is for Golang because it uses the golang.org/x/sys/windows Go package
+func CreateProcessWithTokenG(token windows.Token, application string, args string) (err error) {
+	if application == "" {
+		err = fmt.Errorf("a program must be provided for the CreateProcessWithToken call")
+		return
+	}
+
+	priv := "SeImpersonatePrivilege"
+	name, err := syscall.UTF16PtrFromString(priv)
+	if err != nil {
+		return fmt.Errorf("there was an error converting the privilege \"%s\" to LPCWSTR: %s", priv, err)
+	}
+
+	// Verify that the calling process has the SE_IMPERSONATE_NAME privilege
+	var systemName uint16
+	var luid windows.LUID
+	err = windows.LookupPrivilegeValue(&systemName, name, &luid)
+	if err != nil {
+		return
+	}
+
+	hasPriv, err := hasPrivilegeG(windows.GetCurrentProcessToken(), luid)
+	if err != nil {
+		return fmt.Errorf("the provided access token does not have the SeImpersonatePrivilege and can't be used to create a process")
+	}
+
+	// TODO try to enable the priv before returning with an error
+	if !hasPriv {
+		return fmt.Errorf("the provided access token does not have the SeImpersonatePrivilege and therefore can't be used to call CreateProcessWithToken")
+	}
+
+	// TODO verify the provided token is a PRIMARY token
+	// TODO verify the provided token has the TOKEN_QUERY, TOKEN_DUPLICATE, and TOKEN_ASSIGN_PRIMARY access rights
+
+	// Convert the program to a LPCWSTR
+	lpApplicationName, err := syscall.UTF16PtrFromString(application)
+	if err != nil {
+		err = fmt.Errorf("there was an error converting the application name \"%s\" to LPCWSTR: %s", application, err)
+		return
+	}
+
+	// Convert the program to a LPCWSTR
+	lpCommandLine, err := syscall.UTF16PtrFromString(args)
+	if err != nil {
+		err = fmt.Errorf("there was an error converting the application arguments \"%s\" to LPCWSTR: %s", args, err)
+		return
+	}
+
+	// BOOL CreateProcessWithTokenW(
+	//  [in]                HANDLE                hToken,
+	//  [in]                DWORD                 dwLogonFlags,
+	//  [in, optional]      LPCWSTR               lpApplicationName,
+	//  [in, out, optional] LPWSTR                lpCommandLine,
+	//  [in]                DWORD                 dwCreationFlags,
+	//  [in, optional]      LPVOID                lpEnvironment,
+	//  [in, optional]      LPCWSTR               lpCurrentDirectory,
+	//  [in]                LPSTARTUPINFOW        lpStartupInfo,
+	//  [out]               LPPROCESS_INFORMATION lpProcessInformation
+	//);
+
+	lpCurrentDirectory := uint16(0)
+	lpStartupInfo := &windows.StartupInfo{}
+	lpProcessInformation := &windows.ProcessInformation{}
+	LOGON_NETCREDENTIALS_ONLY := uint32(0x2) // Could not find this constant in the windows package
+
+	err = advapi32.CreateProcessWithTokenG(
+		token,
+		LOGON_NETCREDENTIALS_ONLY,
+		lpApplicationName,
+		lpCommandLine,
+		0,
+		0,
+		&lpCurrentDirectory,
+		lpStartupInfo,
+		lpProcessInformation,
+	)
 	return
 }
 
@@ -150,6 +232,62 @@ func EnablePrivilegeG(privilege string) (err error) {
 	return AdjustTokenPrivilegesG(hToken, false, privilege)
 }
 
+// GetTokenIntegrityLevelG enumerates the integrity level for the provided token and returns it as a string
+// The "G" at the end of the function name is for Golang because it uses the golang.org/x/sys/windows Go package
+func GetTokenIntegrityLevelG(token windows.Token) (string, error) {
+	var info byte
+	var returnedLen uint32
+	// Call the first time to get the output structure size
+	err := windows.GetTokenInformation(token, windows.TokenIntegrityLevel, &info, 0, &returnedLen)
+	if err != windows.ERROR_INSUFFICIENT_BUFFER {
+		return "", fmt.Errorf("there was an error calling windows.GetTokenInformation: %s", err)
+	}
+
+	// Knowing the structure size, call again
+	TokenIntegrityInformation := bytes.NewBuffer(make([]byte, returnedLen))
+	err = windows.GetTokenInformation(token, windows.TokenIntegrityLevel, &TokenIntegrityInformation.Bytes()[0], returnedLen, &returnedLen)
+	if err != nil {
+		return "", fmt.Errorf("there was an error calling windows.GetTokenInformation: %s", err)
+	}
+
+	// Read the buffer into a byte slice
+	bLabel := make([]byte, returnedLen)
+	err = binary.Read(TokenIntegrityInformation, binary.LittleEndian, &bLabel)
+	if err != nil {
+		return "", fmt.Errorf("there was an error reading bytes for the token integrity level: %s", err)
+	}
+
+	// Integrity level is in the Attributes portion of the structure, a DWORD, the last four bytes
+	// https://docs.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-token_mandatory_label
+	// https://docs.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-sid_and_attributes
+	integrityLevel := binary.LittleEndian.Uint32(bLabel[returnedLen-4:])
+	return IntegrityLevelToString(integrityLevel), nil
+}
+
+// GetTokenIntegrityLevelN enumerates the integrity level for the provided token and returns it as a string
+// The "N" in the function name is for Native as it avoids using external packages
+func GetTokenIntegrityLevelN(token *unsafe.Pointer) (string, error) {
+	// Get token integrity level
+	var TokenIntegrityLevel uint32 = 25
+	TokenIntegrityInformation, ReturnLength, err := advapi32.GetTokenInformationN(token, TokenIntegrityLevel)
+	if err != nil {
+		return "", fmt.Errorf(fmt.Sprintf("there was an error calling tokens.GetTokenInformationN: %s", err))
+	}
+
+	// Read the buffer into a byte slice
+	bLabel := make([]byte, ReturnLength)
+	err = binary.Read(TokenIntegrityInformation, binary.LittleEndian, &bLabel)
+	if err != nil {
+		return "", fmt.Errorf("there was an error reading bytes for the token integrity level: %s", err)
+	}
+
+	// Integrity level is in the Attributes portion of the structure, a DWORD, the last four bytes
+	// https://docs.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-token_mandatory_label
+	// https://docs.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-sid_and_attributes
+	integrityLevel := binary.LittleEndian.Uint32(bLabel[ReturnLength-4:])
+	return IntegrityLevelToString(integrityLevel), nil
+}
+
 // GetTokenStatsG uses the GetTokenInformation Windows API call to gather information about the provided access token
 // by retrieving the token's associated TOKEN_STATISTICS structure
 // The "G" at the end of the function name is for Golang because it uses the golang.org/x/sys/windows Go package
@@ -204,6 +342,22 @@ func GetTokenStatsN(token *unsafe.Pointer) (tokenStats advapi32.TOKEN_STATISTICS
 	return
 }
 
+// GetTokenUsername returns the domain and username associated with the provided token as a string
+func GetTokenUsername(token windows.Token) (username string, err error) {
+	user, err := token.GetTokenUser()
+	if err != nil {
+		return "", fmt.Errorf("there was an error calling GetTokenUser(): %s", err)
+	}
+
+	account, domain, _, err := user.User.Sid.LookupAccount("")
+	if err != nil {
+		return "", fmt.Errorf("there was an error calling SID.LookupAccount(): %s", err)
+	}
+
+	username = fmt.Sprintf("%s\\%s", domain, account)
+	return
+}
+
 // GetUserNameExG retrieves the name of the user or other security principal associated with the calling thread
 // The "G" at the end of the function name is for Golang because it uses the golang.org/x/sys/windows Go package
 // https://docs.microsoft.com/en-us/windows/win32/api/secext/nf-secext-getusernameexa
@@ -224,6 +378,54 @@ func GetUserNameExG(format uint32) (username string, err error) {
 	}
 	username = windows.UTF16ToString(lpNameBuffer)
 	return
+}
+
+// hasPrivilegeG checks the provided access token to see if it contains the provided privilege
+// The "G" at the end of the function name is for Golang because it uses the golang.org/x/sys/windows Go package
+func hasPrivilegeG(token windows.Token, privilege windows.LUID) (has bool, err error) {
+	// Get the privileges and attributes
+	// Call to get structure size
+	var returnedLen uint32
+	err = windows.GetTokenInformation(token, windows.TokenPrivileges, nil, 0, &returnedLen)
+	if err != syscall.ERROR_INSUFFICIENT_BUFFER {
+		err = fmt.Errorf("there was an error calling windows.GetTokenInformation: %s", err)
+		return
+	}
+
+	// Call again to get the actual structure
+	info := bytes.NewBuffer(make([]byte, returnedLen))
+	err = windows.GetTokenInformation(token, windows.TokenPrivileges, &info.Bytes()[0], returnedLen, &returnedLen)
+	if err != nil {
+		err = fmt.Errorf("there was an error calling windows.GetTokenInformation: %s", err)
+		return
+	}
+
+	var privilegeCount uint32
+	err = binary.Read(info, binary.LittleEndian, &privilegeCount)
+	if err != nil {
+		err = fmt.Errorf("there was an error reading TokenPrivileges bytes to privilegeCount: %s", err)
+		return
+	}
+
+	// Read in the LUID and Attributes
+	var privs []windows.LUIDAndAttributes
+	for i := 1; i <= int(privilegeCount); i++ {
+		var priv windows.LUIDAndAttributes
+		err = binary.Read(info, binary.LittleEndian, &priv)
+		if err != nil {
+			err = fmt.Errorf("there was an error reading LUIDAttributes to bytes: %s", err)
+			return
+		}
+		privs = append(privs, priv)
+	}
+
+	// Iterate over provided token's privileges and return true if it is present
+	for _, priv := range privs {
+		if priv.Luid == privilege {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // hasPrivilege checks the provided access token to see if it contains the provided privilege
@@ -532,6 +734,55 @@ func StealTokenG(pid uint32) (hToken windows.Token, err error) {
 	return
 }
 
+// StealToken is a wrapper function that steals a token and applies it to the current process
+func StealToken(pid uint32) (string, error) {
+	if pid == 0 {
+		return "", fmt.Errorf("invalid Process ID (PID) of %d", pid)
+	}
+
+	handle, err := kernel32.OpenProcessN(pid, advapi32.PROCESS_QUERY_INFORMATION, true)
+	if err != nil {
+		return "", err
+	}
+
+	// Defer closing the process handle
+	defer func() {
+		err = kernel32.CloseHandleN(handle)
+		if err != nil {
+			fmt.Println(err.Error())
+		}
+	}()
+
+	// Use the process handle to get its access token
+
+	// These token privs are required to call CreateProcessWithToken later
+	DesiredAccess := advapi32.TOKEN_DUPLICATE | advapi32.TOKEN_ASSIGN_PRIMARY | advapi32.TOKEN_QUERY
+
+	token, err := advapi32.OpenProcessTokenN(handle, DesiredAccess)
+	if err != nil {
+		return "", err
+	}
+
+	// Defer closing the token handle
+	defer func() {
+
+		err = kernel32.CloseHandleN(token)
+		if err != nil {
+			fmt.Println(err.Error())
+		}
+	}()
+
+	// Apply the token to this process
+	err = advapi32.ImpersonateLoggedOnUserN(token)
+	if err != nil {
+		return "", err
+	}
+
+	// Insert native Go code here you want to use the thread impersonation token
+
+	return fmt.Sprintf("[+] Successfully stole token from PID %d and applied it to this process\n", pid), nil
+}
+
 // SetThreadTokenG assigns or removes an impersonation token
 // The "G" at the end of the function name is for Golang because it uses the golang.org/x/sys/windows Go package
 // https://docs.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-setthreadtoken
@@ -588,18 +839,37 @@ func WhoamiG() (whoami string, err error) {
 	// Thread
 	tThread := windows.GetCurrentThreadEffectiveToken()
 
+	// Get Process Token Username
+	userProc, err := GetTokenUsername(tProc)
+	if err != nil {
+		return
+	}
+
+	// Get Thread Token Username
+	userThread, err := GetTokenUsername(tThread)
+	if err != nil {
+		return
+	}
+
 	// Get Process Token TOKEN_STATISTICS structure
 	statProc, err := GetTokenStatsG(tProc)
 	if err != nil {
 		return
 	}
 	whoami += fmt.Sprintf("Process (%s) Token:\n", tokenTypeToString(statProc.TokenType))
-	whoami += fmt.Sprintf("\tToken ID: 0x%X", statProc.TokenId.LowPart)
+	whoami += fmt.Sprintf("\tUser: %s", userProc)
+	whoami += fmt.Sprintf(",Token ID: 0x%X", statProc.TokenId.LowPart)
 	whoami += fmt.Sprintf(",Logon ID: 0x%X", statProc.AuthenticationId.LowPart)
 	whoami += fmt.Sprintf(",Privilege Count: %d", statProc.PrivilegeCount)
 	whoami += fmt.Sprintf(",Group Count: %d", statProc.GroupCount)
 	whoami += fmt.Sprintf(",Type: %s", tokenTypeToString(statProc.TokenType))
 	whoami += fmt.Sprintf(",Impersonation Level: %s", impersonationToString(statProc.ImpersonationLevel))
+
+	// Process Token Integrity Level
+	pLevel, err := GetTokenIntegrityLevelG(tProc)
+	if err == nil {
+		whoami += fmt.Sprintf(",Integrity Level: %s", pLevel)
+	}
 
 	statThread, err := GetTokenStatsG(tThread)
 	if err != nil {
@@ -607,12 +877,19 @@ func WhoamiG() (whoami string, err error) {
 	}
 
 	whoami += fmt.Sprintf("\nThread (%s) Token:\n", tokenTypeToString(statThread.TokenType))
-	whoami += fmt.Sprintf("\tToken ID: 0x%X", statThread.TokenId.LowPart)
+	whoami += fmt.Sprintf("\tUser: %s", userThread)
+	whoami += fmt.Sprintf(",Token ID: 0x%X", statThread.TokenId.LowPart)
 	whoami += fmt.Sprintf(",Logon ID: 0x%X", statThread.AuthenticationId.LowPart)
 	whoami += fmt.Sprintf(",Privilege Count: %d", statThread.PrivilegeCount)
 	whoami += fmt.Sprintf(",Group Count: %d", statThread.GroupCount)
 	whoami += fmt.Sprintf(",Type: %s", tokenTypeToString(statThread.TokenType))
 	whoami += fmt.Sprintf(",Impersonation Level: %s", impersonationToString(statThread.ImpersonationLevel))
+
+	// Thread Token Integrity Level
+	tLevel, err := GetTokenIntegrityLevelG(tThread)
+	if err == nil {
+		whoami += fmt.Sprintf(",Integrity Level: %s", tLevel)
+	}
 
 	return
 }
@@ -639,6 +916,12 @@ func WhoamiN() (whoami string, err error) {
 	whoami += fmt.Sprintf(",Type: %s", tokenTypeToString(statProc.TokenType))
 	whoami += fmt.Sprintf(",Impersonation Level: %s", impersonationToString(statProc.ImpersonationLevel))
 
+	// Process Token Integrity Level
+	pLevel, err := GetTokenIntegrityLevelN(tProc)
+	if err == nil {
+		whoami += fmt.Sprintf(",Integrity Level: %s", pLevel)
+	}
+
 	statThread, err := GetTokenStatsN(tThread)
 	if err != nil {
 		return
@@ -651,6 +934,12 @@ func WhoamiN() (whoami string, err error) {
 	whoami += fmt.Sprintf(",Group Count: %d", statThread.GroupCount)
 	whoami += fmt.Sprintf(",Type: %s", tokenTypeToString(statThread.TokenType))
 	whoami += fmt.Sprintf(",Impersonation Level: %s", impersonationToString(statThread.ImpersonationLevel))
+
+	// Thread Token Integrity Level
+	tLevel, err := GetTokenIntegrityLevelN(tThread)
+	if err == nil {
+		whoami += fmt.Sprintf(",Integrity Level: %s", tLevel)
+	}
 
 	return
 }

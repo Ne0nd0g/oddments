@@ -17,6 +17,7 @@ import (
 
 	// Oddments Internal
 	"github.com/Ne0nd0g/oddments/windows/advapi32"
+	"github.com/Ne0nd0g/oddments/windows/user32"
 )
 
 // CreateProcessWithLogonG creates a new process and its primary thread. Then the new process runs the specified
@@ -25,7 +26,7 @@ import (
 // This wrapper function performs validation checks on input arguments and converts them to the necessary type
 // The "G" at the end of the function name is for Golang because it uses the golang.org/x/sys/windows Go package
 // https://docs.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createprocesswithlogonw
-func CreateProcessWithLogonG(username string, domain string, password string, application string, args string, logon uint32) (lpProcessInformation windows.ProcessInformation, err error) {
+func CreateProcessWithLogonG(username string, domain string, password string, application string, args string, logon uint32, hide bool) (lpProcessInformation windows.ProcessInformation, err error) {
 	if username == "" {
 		err = fmt.Errorf("a username must be provided for the CreateProcessWithLogon call")
 		return
@@ -81,6 +82,7 @@ func CreateProcessWithLogonG(username string, domain string, password string, ap
 		return
 	}
 
+	// TODO Resolve application path since the CreateProcessWIthLogonW function does not use the search path
 	// Convert the application to a LPCWSTR
 	lpApplicationName, err := syscall.UTF16PtrFromString(application)
 	if err != nil {
@@ -96,7 +98,13 @@ func CreateProcessWithLogonG(username string, domain string, password string, ap
 	}
 
 	lpCurrentDirectory := uint16(0)
-	lpStartupInfo := windows.StartupInfo{}
+	var lpStartupInfo windows.StartupInfo
+	if hide {
+		lpStartupInfo = windows.StartupInfo{
+			Flags:      windows.STARTF_USESHOWWINDOW,
+			ShowWindow: windows.SW_HIDE,
+		}
+	}
 
 	err = advapi32.CreateProcessWithLogonG(
 		lpUsername,
@@ -120,7 +128,7 @@ func CreateProcessWithLogonG(username string, domain string, password string, ap
 // This wrapper function performs validation checks on input arguments and converts them to the necessary type
 // The "N" in the function name is for Native as it avoids using external packages
 // https://docs.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createprocesswithlogonw
-func CreateProcessWithLogonN(username string, domain string, password string, application string, args string, logon uint32) (lpProcessInformation advapi32.ProcessInformation, err error) {
+func CreateProcessWithLogonN(username string, domain string, password string, application string, args string, logon uint32, hide bool) (lpProcessInformation advapi32.ProcessInformation, err error) {
 	if username == "" {
 		err = fmt.Errorf("a username must be provided for the CreateProcessWithLogon call")
 		return
@@ -176,6 +184,7 @@ func CreateProcessWithLogonN(username string, domain string, password string, ap
 		return
 	}
 
+	// TODO Resolve application path since the CreateProcessWIthLogonW function does not use the search path
 	// Convert the application to a LPCWSTR
 	lpApplicationName, err := syscall.UTF16PtrFromString(application)
 	if err != nil {
@@ -190,7 +199,13 @@ func CreateProcessWithLogonN(username string, domain string, password string, ap
 		return
 	}
 
-	lpStartupInfo := advapi32.StartupInfo{}
+	var lpStartupInfo advapi32.StartupInfo
+	if hide {
+		lpStartupInfo = advapi32.StartupInfo{
+			Flags:      user32.STARTF_USESHOWWINDOW,
+			ShowWindow: uint16(user32.SW_HIDE),
+		}
+	}
 	//lpProcessInformation := &windows.ProcessInformation{}
 	lpCurrentDirectory := uint16(0)
 
